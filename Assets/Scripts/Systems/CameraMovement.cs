@@ -18,6 +18,26 @@ public class Follow : MonoBehaviour
 
     void Start()
     {
+        // objectTofollow와 realCamera가 설정되지 않은 경우 기본 값으로 할당
+        if (objectTofollow == null)
+        {
+            GameObject player = GameObject.FindWithTag("Player");
+            if (player != null)
+            {
+                objectTofollow = player.transform;
+            }
+            else
+            {
+                Debug.LogError("Player not found in the scene. Please assign the Player object.");
+            }
+        }
+
+        if (realCamera == null)
+        {
+            realCamera = Camera.main.transform;
+            Debug.Log("Real Camera automatically assigned to Main Camera");
+        }
+
         rotX = transform.localRotation.eulerAngles.x;
         rotY = transform.localRotation.eulerAngles.y;
 
@@ -39,6 +59,8 @@ public class Follow : MonoBehaviour
 
     void LateUpdate()
     {
+        if (objectTofollow == null || realCamera == null) return;
+
         Vector3 targetPosition = objectTofollow.position + offset;
         transform.position = Vector3.MoveTowards(transform.position, targetPosition, followSpeed * Time.deltaTime);
 
