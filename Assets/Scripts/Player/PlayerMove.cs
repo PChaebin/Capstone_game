@@ -1,146 +1,146 @@
 using System.Collections;
 using System.Collections.Generic;
+using Unity.VisualScripting;
 using UnityEngine;
 
 public class PlayerMove : MonoBehaviour
 {
-    Rigidbody rb;
+    CharacterController _controller;
+    Animator _animator;
+    Camera _camera;
 
-    public float speed = 7.0f; // 일반 속도
-    public float runSpeed = 10.0f; // 달리기 속도
-    public float dashSpeed = 20.0f; // 대쉬 속도
-    public float dashDuration = 0.2f; // 대쉬 지속 시간
-    public float jumpForce = 5.0f; // 점프 힘
+    public float speed = 5.0f;
+    public float runSpeed = 8.0f;
+    public float jumpForce = 45.0f;
+    public float gravity = 10.0f;
+    private float verticalSpeed = 0.0f;
+    public float finalSpeed;
+    public bool run;
+    public bool isJumping = false;
 
-    private bool isDashing = false;
-    private bool isGrounded = true;
+    public bool toggleCameraRotation;
+    public float smoothness = 10.0f;
 
-    float hAxis;
-    float vAxis;
-    Vector3 moveVec;
+    // 구르기 관련 변수
+    public bool isRolling = false;
+    public float rollSpeed = 15.0f;
+    public float rollDuration = 3f;
+    private float rollTimer = 0.0f;
 
-    bool isBorder;
-
-    public Transform cameraTransform; // 카메라 Transform을 받아옴
-
-    private void Awake()
+    void Start()
     {
-        rb = GetComponent<Rigidbody>();
+        _animator = this.GetComponent<Animator>();
+        _camera = Camera.main;
+        _controller = this.GetComponent<CharacterController>();
     }
 
     void Update()
     {
-        GetInput();
-        Run();
-        Dash();
-        Jump();
-        Debug.Log(moveVec);
-    }
+        if (Input.GetKey(KeyCode.LeftAlt))
+        {
+            toggleCameraRotation = true;
+        }
+        else
+        {
+            toggleCameraRotation = false;
+        }
 
-    void GetInput()
-    {
-        hAxis = Input.GetAxisRaw("Horizontal");
-        vAxis = Input.GetAxisRaw("Vertical");
-
-        Vector3 forward = cameraTransform.forward;
-        Vector3 right = cameraTransform.right;
-
-        forward.y = 0f; // 카메라의 y축 방향을 제거하여 수평 이동만 반영
-        right.y = 0f;   // 카메라의 y축 방향을 제거하여 수평 이동만 반영
-
-        forward.Normalize();
-        right.Normalize();
-
-        moveVec = forward * vAxis + right * hAxis;
-        moveVec *= speed; // 기본 속도로 이동 벡터 초기화
-    }
-
-    void Run()
-    {
         if (Input.GetKey(KeyCode.LeftShift))
         {
-            moveVec *= runSpeed / speed; // 비율로 증가
+            run = true;
+        }
+        else
+        {
+            run = false;
+        }
+
+        HandleActions();
+    }
+
+    void FixedUpdate()
+    {
+        InputMovement();
+    }
+
+    void LateUpdate()
+    {
+        if (!toggleCameraRotation)
+        {
+            Vector3 playerRotate = Vector3.Scale(_camera.transform.forward, new Vector3(1, 0, 1));
+            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(playerRotate), Time.deltaTime * smoothness);
         }
     }
 
-    void Dash()
+    void InputMovement()
     {
-        if (Input.GetKeyDown(KeyCode.LeftControl) && !isDashing)
+        finalSpeed = run ? runSpeed : speed;
+
+        Vector3 forward = transform.TransformDirection(Vector3.forward);
+        Vector3 right = transform.TransformDirection(Vector3.right);
+
+        Vector3 moveDirection = (forward * Input.GetAxisRaw("Vertical") + right * Input.GetAxisRaw("Horizontal")).normalized;
+
+        if (_controller.isGrounded)
         {
-            StartCoroutine(PerformDash());
+            if (!isJumping)
+            {
+                verticalSpeed = -gravity * Time.deltaTime; // 지면에 있을 때 약간의 중력을 적용하여 지면에 붙어 있게 함
+                if (Input.GetKeyDown(KeyCode.Space))
+                {
+                    verticalSpeed = jumpForce;
+                    _animator.SetTrigger("isJumping");
+                    isJumping = true;
+                }
+            }
+            else
+            {
+                isJumping = false;
+            }
         }
-    }
-
-    IEnumerator PerformDash()
-    {
-        isDashing = true;
-        float startTime = Time.time;
-
-        while (Time.time < startTime + dashDuration)
+        else
         {
-            rb.MovePosition(rb.position + moveVec.normalized * dashSpeed * Time.deltaTime);
-            yield return null;
+            verticalSpeed -= gravity * Time.deltaTime; // 공중에 있을 때 중력 적용
         }
 
-        isDashing = false;
-    }
+        moveDirection.y = verticalSpeed;
 
-    void Jump()
-    {
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+        // 구르기 중일 때
+        if (isRolling)
         {
-            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
-            isGrounded = false;
+            rollTimer += Time.deltaTime;
+            if (rollTimer < rollDuration)
+            {
+                _controller.Move(forward * rollSpeed * Time.deltaTime);
+            }
+            else
+            {
+                isRolling = false;
+                rollTimer = 0.0f;
+            }
         }
-    }
-
-    void StopToWall()
-    {
-        // 이동 벡터의 방향으로 레이를 쏨
-        Debug.DrawRay(transform.position, moveVec.normalized * 1, Color.green);
-        isBorder = Physics.Raycast(transform.position, moveVec.normalized, 1, LayerMask.GetMask("Wall"));
-
-        if (isBorder)
+        else
         {
-            moveVec = Vector3.zero; // 벽에 닿으면 이동 벡터를 0으로 설정
+            _controller.Move(moveDirection * finalSpeed * Time.deltaTime);
         }
+
+        float percent = ((run) ? 1 : 0.5f) * moveDirection.magnitude;
+        _animator.SetFloat("Blend", percent, 0.1f, Time.deltaTime);
     }
 
-    private void FixedUpdate()
+    void HandleActions()
     {
-        StopToWall();
-        if (!isDashing)
+        if (Input.GetMouseButtonDown(0)) // 좌클릭으로 공격
         {
-            Move();
+            _animator.SetTrigger("isAttacking");
         }
-    }
 
-    void Move()
-    {
-        rb.MovePosition(rb.position + moveVec * Time.fixedDeltaTime);
-    }
-
-    private void OnCollisionEnter(Collision collision)
-    {
-        if (collision.gameObject.CompareTag("Ground"))
+        if (Input.GetKeyDown(KeyCode.LeftControl)) // 왼쪽 컨트롤로 구르기
         {
-            isGrounded = true;
-        }
-    }
-
-    private void OnCollisionStay(Collision collision)
-    {
-        if (collision.gameObject.CompareTag("Ground"))
-        {
-            isGrounded = true;
-        }
-    }
-
-    private void OnCollisionExit(Collision collision)
-    {
-        if (collision.gameObject.CompareTag("Ground"))
-        {
-            isGrounded = false;
+            if (!isRolling)
+            {
+                isRolling = true;
+                _animator.SetTrigger("isRolling");
+            }
         }
     }
 }
