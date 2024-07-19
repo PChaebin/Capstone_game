@@ -33,6 +33,9 @@ public class PlayerMove : MonoBehaviour
     // 스킬 관련 변수
     public bool isSkilling = false;
 
+    // 플레이어 체력
+    public float playerHealth = 100;
+
     void Start()
     {
         _animator = this.GetComponent<Animator>();
